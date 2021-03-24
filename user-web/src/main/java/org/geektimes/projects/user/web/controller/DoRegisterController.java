@@ -13,6 +13,7 @@ import org.geektimes.context.ComponentContext;
 import org.geektimes.projects.user.domain.User;
 import org.geektimes.projects.user.domain.dto.Const;
 import org.geektimes.projects.user.service.UserService;
+import org.geektimes.servlet.ControllerServletHolder;
 import org.geektimes.web.mvc.controller.RestController;
 
 /**
@@ -50,6 +51,10 @@ public class DoRegisterController implements RestController {
         Config config = configProviderResolver.getConfig(servletContext.getClassLoader());
         String appName = config.getOptionalValue("application.name", String.class).orElse("default");
         System.out.println(appName);
+
+        String appName2 = ControllerServletHolder.getConfigThreadLocal().get()
+            .getOptionalValue("application.name", String.class).orElse("default");
+        System.out.println(appName2);
 
     }
 }

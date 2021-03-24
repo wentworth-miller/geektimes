@@ -23,6 +23,10 @@ import javax.ws.rs.HttpMethod;
 import javax.ws.rs.Path;
 
 import org.apache.commons.lang.StringUtils;
+import org.eclipse.microprofile.config.Config;
+import org.eclipse.microprofile.config.spi.ConfigProviderResolver;
+import org.geektimes.configuration.microprofile.config.source.servlet.MicroprofileConfigInitializer;
+import org.geektimes.servlet.ControllerServletHolder;
 import org.geektimes.web.mvc.controller.Controller;
 import org.geektimes.web.mvc.controller.PageController;
 import org.geektimes.web.mvc.controller.RestController;
@@ -96,6 +100,13 @@ public class FrontControllerServlet extends HttpServlet {
         return supportedHttpMethods;
     }
 
+    private void preHandle(ServletContext servletContext) {
+        ConfigProviderResolver configProviderResolver =
+            (ConfigProviderResolver)servletContext.getAttribute(MicroprofileConfigInitializer.class.getName());
+        Config config = configProviderResolver.getConfig(servletContext.getClassLoader());
+        ControllerServletHolder.getConfigThreadLocal().set(config);
+    }
+
     /**
      * SCWCD
      *
@@ -106,6 +117,7 @@ public class FrontControllerServlet extends HttpServlet {
      */
     @Override
     public void service(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        preHandle(request.getServletContext());
         // 建立映射关系
         // requestURI = /a/hello/world
         String requestURI = request.getRequestURI();
@@ -161,6 +173,12 @@ public class FrontControllerServlet extends HttpServlet {
                 }
             }
         }
+
+        postHandle(request.getServletContext());
+    }
+
+    private void postHandle(ServletContext servletContext) {
+        ControllerServletHolder.getConfigThreadLocal().set(null);
     }
 
     // private void beforeInvoke(Method handleMethod, HttpServletRequest request, HttpServletResponse response) {
