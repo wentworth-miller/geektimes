@@ -6,9 +6,6 @@ import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 import javax.servlet.annotation.WebListener;
 
-import org.eclipse.microprofile.config.Config;
-import org.eclipse.microprofile.config.ConfigProvider;
-import org.geektimes.context.ComponentContext;
 import org.geektimes.projects.user.sql.DataSourceManager;
 
 @WebListener
@@ -19,12 +16,12 @@ public class ComponentInitializerListener implements ServletContextListener {
     @Override
     public void contextInitialized(ServletContextEvent sce) {
         DataSourceManager.init();
-        ComponentContext componentContext = new ComponentContext();
-        componentContext.init(sce.getServletContext());
+//        ComponentContext componentContext = new ComponentContext();
+//        componentContext.init(sce.getServletContext());
 
-        Config config = ConfigProvider.getConfig();
-        String applicationName = config.getValue("application.name", String.class);
-        logger.info("application.name: **** " + applicationName);
+//        Config config = ConfigProvider.getConfig();
+//        String applicationName = config.getValue("application.name", String.class);
+//        logger.info("application.name: **** " + applicationName);
     }
 
     @Override

@@ -1,5 +1,6 @@
 package org.geektimes.context;
 
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,6 +9,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.annotation.PostConstruct;
@@ -24,50 +26,52 @@ import org.geektimes.function.ThrowableAction;
 import org.geektimes.function.ThrowableFunction;
 
 /**
- * 组件上下文（Web 应用全局使用）
+ * Java 传统组件上下文（基于 JNDI实现）
  */
-public class ComponentContext {
+public class ClassicComponentContext implements ComponentContext {
 
-    public static final String CONTEXT_NAME = ComponentContext.class.getName();
+    public static final String CONTEXT_NAME = ClassicComponentContext.class.getName();
 
     private static final String COMPONENT_ENV_CONTEXT_NAME = "java:comp/env";
 
     private static final Logger logger = Logger.getLogger(CONTEXT_NAME);
 
-    private static ServletContext servletContext;
+    private static ServletContext servletContext; // 请注意
+    // 假设一个 Tomcat JVM 进程，三个 Web Apps，会不会相互冲突？（不会冲突）
+    // static 字段是 JVM 缓存吗？（是 ClassLoader 缓存）
 
-    /**
-     * Component Env Context
-     */
-    private Context envContext;
+    // private static ApplicationContext applicationContext;
+
+    // public void setApplicationContext(ApplicationContext applicationContext){
+    // ComponentContext.applicationContext = applicationContext;
+    // WebApplicationContextUtils.getRootWebApplicationContext()
+    // }
+
+    private Context envContext; // Component Env Context
 
     private ClassLoader classLoader;
 
-    private Map<String, Object> componentsMap = new LinkedHashMap<>();
+    private Map<String, Object> componentsCache = new LinkedHashMap<>();
+
+    /**
+     * @PreDestroy 方法缓存，Key 为标注方法，Value 为方法所属对象
+     */
+    private Map<Method, Object> preDestroyMethodCache = new LinkedHashMap<>();
 
     /**
      * 获取 ComponentContext
      *
      * @return
      */
-    public static ComponentContext getInstance() {
-        return (ComponentContext)servletContext.getAttribute(CONTEXT_NAME);
+    public static ClassicComponentContext getInstance() {
+        return (ClassicComponentContext)servletContext.getAttribute(CONTEXT_NAME);
     }
 
-    private static void close(Context context) {
-        if (context != null) {
-            ThrowableAction.execute(context::close);
-        }
-    }
-
-    public void init(ServletContext servletContext) throws RuntimeException {
-        ComponentContext.servletContext = servletContext;
+    public ComponentContext init(ServletContext servletContext) throws RuntimeException {
+        ClassicComponentContext.servletContext = servletContext;
         servletContext.setAttribute(CONTEXT_NAME, this);
-        // 获取当前 ServletContext（WebApp）ClassLoader
-        this.classLoader = servletContext.getClassLoader();
-        initEnvContext();
-        instantiateComponents();
-        initializeComponents();
+        this.init();
+        return this;
     }
 
     /**
@@ -77,7 +81,7 @@ public class ComponentContext {
         // 遍历获取所有的组件名称
         List<String> componentNames = listAllComponentNames();
         // 通过依赖查找，实例化对象（ Tomcat BeanFactory setter 方法的执行，仅支持简单类型）
-        componentNames.forEach(name -> componentsMap.put(name, lookupComponent(name)));
+        componentNames.forEach(name -> componentsCache.put(name, lookupComponent(name)));
     }
 
     /**
@@ -89,18 +93,56 @@ public class ComponentContext {
      * </ol>
      */
     protected void initializeComponents() {
-        componentsMap.values().forEach(component -> {
-            Class<?> componentClass = component.getClass();
-            // 注入阶段 - {@link Resource}
-            injectComponents(component, componentClass);
-            // 初始阶段 - {@link PostConstruct}
-            processPostConstruct(component, componentClass);
-            // TODO 实现销毁阶段 - {@link PreDestroy}
-            processPreDestroy();
-        });
+        componentsCache.values().forEach(this::initializeComponent);
     }
 
-    private void injectComponents(Object component, Class<?> componentClass) {
+    /**
+     * 初始化组件（支持 Java 标准 Commons Annotation 生命周期）
+     * <ol>
+     * <li>注入阶段 - {@link Resource}</li>
+     * <li>初始阶段 - {@link PostConstruct}</li>
+     * <li>销毁阶段 - {@link PreDestroy}</li>
+     * </ol>
+     */
+    public void initializeComponent(Object component) {
+        Class<?> componentClass = component.getClass();
+        // 注入阶段 - {@link Resource}
+        injectComponent(component, componentClass);
+        // 查询候选方法
+        List<Method> candidateMethods = findCandidateMethods(componentClass);
+        // 初始阶段 - {@link PostConstruct}
+        processPostConstruct(component, candidateMethods);
+        // 本阶段处理 {@link PreDestroy} 方法元数据
+        processPreDestroyMetadata(component, candidateMethods);
+    }
+
+    /**
+     * 获取组件类中的候选方法
+     *
+     * @param componentClass
+     *            组件类
+     * @return non-null
+     */
+    private List<Method> findCandidateMethods(Class<?> componentClass) {
+        return Stream.of(componentClass.getMethods()) // public 方法
+            .filter(method -> !Modifier.isStatic(method.getModifiers()) && // 非 static
+                method.getParameterCount() == 0) // 无参数
+            .collect(Collectors.toList());
+    }
+
+    private void registerShutdownHook() {
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            processPreDestroy();
+
+        }));
+    }
+
+    public void injectComponent(Object component) {
+        injectComponent(component, component.getClass());
+    }
+
+    protected void injectComponent(Object component, Class<?> componentClass) {
         Stream.of(componentClass.getDeclaredFields()).filter(field -> {
             int mods = field.getModifiers();
             return !Modifier.isStatic(mods) && field.isAnnotationPresent(Resource.class);
@@ -117,23 +159,35 @@ public class ComponentContext {
         });
     }
 
-    private void processPostConstruct(Object component, Class<?> componentClass) {
-        Stream.of(componentClass.getMethods()).filter(method -> !Modifier.isStatic(method.getModifiers()) && // 非 static
-            method.getParameterCount() == 0 && // 没有参数
-            method.isAnnotationPresent(PostConstruct.class) // 标注 @PostConstruct
-        ).forEach(method -> {
-            // 执行目标方法
-            try {
-                method.invoke(component);
-            } catch (Exception e) {
-                servletContext.log("异常", e.getCause());
-                throw new RuntimeException(e);
-            }
-        });
+    private void processPostConstruct(Object component, List<Method> candidateMethods) {
+        candidateMethods.stream().filter(method -> method.isAnnotationPresent(PostConstruct.class))// 标注 @PostConstruct
+            .forEach(method -> {
+                // 执行目标方法
+                ThrowableAction.execute(() -> method.invoke(component));
+            });
+    }
+
+    /**
+     * @param component
+     *            组件对象
+     * @param candidateMethods
+     *            候选方法
+     * @see #processPreDestroy()
+     */
+    private void processPreDestroyMetadata(Object component, List<Method> candidateMethods) {
+        candidateMethods.stream().filter(method -> method.isAnnotationPresent(PreDestroy.class)) // 标注 @PreDestroy
+            .forEach(method -> {
+                preDestroyMethodCache.put(method, component);
+            });
     }
 
     private void processPreDestroy() {
-        // TODO
+        for (Method preDestroyMethod : preDestroyMethodCache.keySet()) {
+            // 移除集合中的对象，防止重复执行 @PreDestroy 方法
+            Object component = preDestroyMethodCache.remove(preDestroyMethod);
+            // 执行目标方法
+            ThrowableAction.execute(() -> preDestroyMethod.invoke(component));
+        }
     }
 
     /**
@@ -180,19 +234,13 @@ public class ComponentContext {
         return result;
     }
 
-    protected <C> C lookupComponent(String name) {
+    public <C> C lookupComponent(String name) {
         return executeInContext(context -> (C)context.lookup(name));
     }
 
-    /**
-     * 通过名称进行依赖查找
-     *
-     * @param name
-     * @param <C>
-     * @return
-     */
+    @Override
     public <C> C getComponent(String name) {
-        return (C)componentsMap.get(name);
+        return (C)componentsCache.get(name);
     }
 
     /**
@@ -200,8 +248,9 @@ public class ComponentContext {
      *
      * @return
      */
+    @Override
     public List<String> getComponentNames() {
-        return new ArrayList<>(componentsMap.keySet());
+        return new ArrayList<>(componentsCache.keySet());
     }
 
     private List<String> listAllComponentNames() {
@@ -236,8 +285,34 @@ public class ComponentContext {
         });
     }
 
+    @Override
+    public void init() {
+        initClassLoader();
+        initEnvContext();
+        instantiateComponents();
+        initializeComponents();
+        registerShutdownHook();
+    }
+
+    private void initClassLoader() {
+        // 获取当前 ServletContext（WebApp）ClassLoader
+        this.classLoader = servletContext.getClassLoader();
+    }
+
+    @Override
     public void destroy() throws RuntimeException {
+        processPreDestroy();
+        clearCache();
+        closeEnvContext();
+    }
+
+    private void closeEnvContext() {
         close(this.envContext);
+    }
+
+    private void clearCache() {
+        componentsCache.clear();
+        preDestroyMethodCache.clear();
     }
 
     private void initEnvContext() throws RuntimeException {
@@ -252,6 +327,12 @@ public class ComponentContext {
             throw new RuntimeException(e);
         } finally {
             close(context);
+        }
+    }
+
+    private static void close(Context context) {
+        if (context != null) {
+            ThrowableAction.execute(context::close);
         }
     }
 }

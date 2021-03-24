@@ -19,13 +19,13 @@ import org.springframework.util.ClassUtils;
  * @author xubin
  * @date 2021/3/16 19:21
  */
-public class DefaultConfig implements Config {
+public class DefaultConfigBack implements Config {
 
     private List<ConfigSource> configSources = new LinkedList<>();
 
-    public DefaultConfig() {
+    public DefaultConfigBack() {
         ClassLoader classLoader = getClass().getClassLoader();
-        synchronized (DefaultConfig.class) {
+        synchronized (DefaultConfigBack.class) {
             ServiceLoader<ConfigSource> load = ServiceLoader.load(ConfigSource.class, classLoader);
             load.forEach(configSources::add);
         }

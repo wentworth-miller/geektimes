@@ -1,9 +1,14 @@
 package org.geektimes.projects.user.web.controller;
 
+import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.Path;
 
+import org.eclipse.microprofile.config.Config;
+import org.eclipse.microprofile.config.spi.ConfigProviderResolver;
+import org.geektimes.configuration.microprofile.config.source.servlet.MicroprofileConfigInitializer;
+import org.geektimes.context.ClassicComponentContext;
 import org.geektimes.context.ComponentContext;
 import org.geektimes.projects.user.domain.User;
 import org.geektimes.projects.user.domain.dto.Const;
@@ -22,7 +27,10 @@ public class DoRegisterController implements RestController {
     public void execute(HttpServletRequest request, HttpServletResponse response) throws Throwable {
 
         // UserService userService = UserServiceFactory.getInstance();
-        UserService userService = ComponentContext.getInstance().getComponent(Const.USER_SERVICE);
+        ComponentContext componentContext =
+            (ComponentContext)request.getServletContext().getAttribute(ClassicComponentContext.class.getName());
+        printParams(request.getServletContext());
+        UserService userService = componentContext.getComponent(Const.USER_SERVICE);
         User user = new User();
         user.setName("test");
         user.setEmail(request.getParameter("email"));
@@ -34,5 +42,14 @@ public class DoRegisterController implements RestController {
         } else {
             response.sendRedirect("/register/index");
         }
+    }
+
+    private void printParams(ServletContext servletContext) {
+        ConfigProviderResolver configProviderResolver =
+            (ConfigProviderResolver)servletContext.getAttribute(MicroprofileConfigInitializer.class.getName());
+        Config config = configProviderResolver.getConfig(servletContext.getClassLoader());
+        String appName = config.getOptionalValue("application.name", String.class).orElse("default");
+        System.out.println(appName);
+
     }
 }

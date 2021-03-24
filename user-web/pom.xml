@@ -19,7 +19,11 @@
         <dependency>
             <groupId>org.geekbang.projects</groupId>
             <artifactId>my-web-mvc</artifactId>
-            <version>${revision}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.geekbang.projects</groupId>
+            <artifactId>my-dependency-injection</artifactId>
         </dependency>
 
         <!-- Servlet API -->

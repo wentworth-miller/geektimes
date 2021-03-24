@@ -23,6 +23,7 @@ import javax.persistence.criteria.CriteriaQuery;
 import javax.persistence.criteria.CriteriaUpdate;
 import javax.persistence.metamodel.Metamodel;
 
+import org.geektimes.context.ClassicComponentContext;
 import org.geektimes.context.ComponentContext;
 
 /**
@@ -68,7 +69,7 @@ public class DelegatingEntityManager implements EntityManager {
             throw new RuntimeException(e);
         }
         // 增加 JNDI 引用处理
-        ComponentContext componentContext = ComponentContext.getInstance();
+        ComponentContext componentContext = ClassicComponentContext.getInstance();
 
         for (String propertyName : properties.stringPropertyNames()) {
             String propertyValue = properties.getProperty(propertyName);

@@ -14,7 +14,7 @@ import org.eclipse.microprofile.config.spi.ConfigProviderResolver;
  * @author xubin
  * @date 2021/3/16 19:19
  */
-public class DefaultConfigProviderResolver extends ConfigProviderResolver {
+public class DefaultConfigProviderResolverBack extends ConfigProviderResolver {
 
     @Override
     public Config getConfig() {
